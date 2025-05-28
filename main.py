@@ -1,118 +1,155 @@
 import pygame
-import sys
 import random
-import menu
-import hud
+import sys
 
-# Initiera pygame
+# Initiera Pygame och fontmodulen
 pygame.init()
+pygame.font.init()
 
-# Skärm
-WIDTH, HEIGHT = 600, 400
+# Skärmstorlek
+WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("2D Skjutspel mot AI")
 
 # Färger
 WHITE = (255, 255, 255)
-BLUE = (0, 0, 255)
-RED = (255, 0, 0)
 BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
 
-# Spelare & AI
-player_radius = 20
-player_x = WIDTH // 2
-player_y = HEIGHT - 40
-player_speed = 5
-player_lives = 3
-
-ai_radius = 20
-ai_x = WIDTH // 2
-ai_y = 40
-ai_speed = 3
-ai_direction = 1
-ai_lives = 3
-
-# Skott
-bullet_radius = 5
-player_bullets = []
-ai_bullets = []
-bullet_speed = 7
-
+# FPS
+FPS = 60
 clock = pygame.time.Clock()
 
-# Visa startmeny
-menu.show_start(screen)
+# Spelarens klass
+class Player:
+    def __init__(self):
+        self.radius = 20
+        self.x = WIDTH // 2
+        self.y = HEIGHT - 50
+        self.speed = 5
+        self.color = GREEN
+        self.bullets = []
 
-running = True
-while running:
-    clock.tick(60)
-    screen.fill(BLACK)
+    def move(self, keys):
+        if keys[pygame.K_LEFT] and self.x - self.radius > 0:
+            self.x -= self.speed
+        if keys[pygame.K_RIGHT] and self.x + self.radius < WIDTH:
+            self.x += self.speed
 
-    keys = pygame.key.get_pressed()
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT or keys[pygame.K_ESCAPE]:
-            running = False
+    def shoot(self):
+        bullet = Bullet(self.x, self.y - self.radius)
+        self.bullets.append(bullet)
 
-    # Spelarrörelse
-    if keys[pygame.K_LEFT] and player_x - player_radius > 0:
-        player_x -= player_speed
-    if keys[pygame.K_RIGHT] and player_x + player_radius < WIDTH:
-        player_x += player_speed
-    if keys[pygame.K_SPACE]:
-        if len(player_bullets) < 3:
-            player_bullets.append([player_x, player_y - player_radius])
+    def draw(self):
+        pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
+        for bullet in self.bullets:
+            bullet.draw()
 
-    # AI rörelse
-    ai_x += ai_speed * ai_direction
-    if ai_x - ai_radius <= 0 or ai_x + ai_radius >= WIDTH:
-        ai_direction *= -1
+# Fiende (AI)
+class Enemy:
+    def __init__(self):
+        self.radius = 20
+        self.x = random.randint(self.radius, WIDTH - self.radius)
+        self.y = 50
+        self.speed = 3
+        self.color = RED
+        self.direction = 1  # 1 = höger, -1 = vänster
 
-    # AI skjuter slumpmässigt
-    if random.randint(1, 60) == 1 and len(ai_bullets) < 3:
-        ai_bullets.append([ai_x, ai_y + ai_radius])
+    def move(self):
+        self.x += self.speed * self.direction
+        # Byt riktning vid kanterna
+        if self.x + self.radius >= WIDTH or self.x - self.radius <= 0:
+            self.direction *= -1
 
-    # Flytta och kontrollera spelarens skott
-    for bullet in player_bullets[:]:
-        bullet[1] -= bullet_speed
-        if bullet[1] < 0:
-            player_bullets.remove(bullet)
-        elif (ai_x - ai_radius < bullet[0] < ai_x + ai_radius and
-              ai_y - ai_radius < bullet[1] < ai_y + ai_radius):
-            ai_lives -= 1
-            player_bullets.remove(bullet)
+    def draw(self):
+        pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
 
-    # Flytta och kontrollera AI:s skott
-    for bullet in ai_bullets[:]:
-        bullet[1] += bullet_speed
-        if bullet[1] > HEIGHT:
-            ai_bullets.remove(bullet)
-        elif (player_x - player_radius < bullet[0] < player_x + player_radius and
-              player_y - player_radius < bullet[1] < player_y + player_radius):
-            player_lives -= 1
-            ai_bullets.remove(bullet)
+# Skott
+class Bullet:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.speed = 7
+        self.radius = 5
+        self.color = WHITE
 
-    # Rita spelare och AI
-    pygame.draw.circle(screen, BLUE, (player_x, player_y), player_radius)
-    pygame.draw.circle(screen, RED, (ai_x, ai_y), ai_radius)
+    def move(self):
+        self.y -= self.speed
 
-    # Rita skott
-    for bullet in player_bullets:
-        pygame.draw.circle(screen, WHITE, bullet, bullet_radius)
-    for bullet in ai_bullets:
-        pygame.draw.circle(screen, WHITE, bullet, bullet_radius)
+    def draw(self):
+        pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
 
-    # Visa liv
-    hud.draw_lives(screen, player_lives, ai_lives)
+# Kollision mellan två cirklar
+def is_collision(x1, y1, r1, x2, y2, r2):
+    distance = ((x1 - x2)**2 + (y1 - y2)**2) ** 0.5
+    return distance < r1 + r2
 
-    # Kontrollera vinst/förlust
-    if player_lives <= 0:
-        menu.show_game_over(screen, winner="AI")
-        running = False
-    elif ai_lives <= 0:
-        menu.show_game_over(screen, winner="Spelaren")
-        running = False
+def main():
+    player = Player()
+    enemy = Enemy()
 
-    pygame.display.flip()
+    font = pygame.font.SysFont("Arial", 30)
+    game_over = False
+    win = False
 
-pygame.quit()
-sys.exit()
+    shoot_cooldown = 0  # för att inte skjuta för ofta
+
+    while True:
+        clock.tick(FPS)
+        screen.fill(BLACK)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+        if not game_over:
+            keys = pygame.key.get_pressed()
+            player.move(keys)
+
+            # Skjut när mellanslag trycks, med cooldown
+            if keys[pygame.K_SPACE] and shoot_cooldown == 0:
+                player.shoot()
+                shoot_cooldown = 15  # frames cooldown
+
+            if shoot_cooldown > 0:
+                shoot_cooldown -= 1
+
+            enemy.move()
+
+            # Flytta och kolla kollision på skott
+            for bullet in player.bullets[:]:
+                bullet.move()
+                if bullet.y < 0:
+                    player.bullets.remove(bullet)
+                elif is_collision(bullet.x, bullet.y, bullet.radius,
+                                  enemy.x, enemy.y, enemy.radius):
+                    player.bullets.remove(bullet)
+                    game_over = True
+                    win = True
+
+            # Rita spelare och fiende
+            player.draw()
+            enemy.draw()
+
+            # Visa instruktioner
+            text = font.render("Vänster/Höger: Flytta  Mellanslag: Skjut", True, WHITE)
+            screen.blit(text, (10, HEIGHT - 40))
+        else:
+            if win:
+                msg = "Du vann! Tryck ESC för att avsluta."
+            else:
+                msg = "Game Over! Tryck ESC för att avsluta."
+            text = font.render(msg, True, WHITE)
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2))
+
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_ESCAPE]:
+                pygame.quit()
+                sys.exit()
+
+        pygame.display.flip()
+
+if __name__ == "__main__":
+    main()
